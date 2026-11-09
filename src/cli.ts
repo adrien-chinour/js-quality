@@ -1,0 +1,64 @@
+#!/usr/bin/env node
+import { parseArgs } from 'node:util';
+import { formatResults, GATES, runCheck, type Gate } from './check.ts';
+import { loadConfig } from './config.ts';
+import { runMutation } from './mutation.ts';
+
+const USAGE = `Usage:
+  jsq check [--only complexity,crap,duplication]   cognitive complexity, CRAP and duplication gates
+  jsq mutation [--mutate <glob>]...                 mutation testing with Stryker
+
+Settings: optional "jsq" block of package.json (src, ignore, complexity, crap, lcov,
+duplication.{minTokens,minLines,threshold}, mutation.{command,break,mutate}).`;
+
+export function parseGates(value: string | undefined): Gate[] {
+  if (value === undefined) return [...GATES];
+  const names = value.split(',').map((name) => name.trim());
+  const unknown = names.filter((name) => !(GATES as readonly string[]).includes(name));
+  if (unknown.length > 0) throw new Error(`unknown gate(s): ${unknown.join(', ')}`);
+  return names as Gate[];
+}
+
+async function check(root: string, only: string | undefined): Promise<number> {
+  const results = await runCheck(root, await loadConfig(root), parseGates(only));
+  console.log(formatResults(results));
+  return results.every((result) => result.passed) ? 0 : 1;
+}
+
+function parseCommand(argv: string[]) {
+  return parseArgs({
+    args: argv,
+    allowPositionals: true,
+    options: {
+      only: { type: 'string' },
+      mutate: { type: 'string', multiple: true },
+      help: { type: 'boolean', short: 'h' },
+    },
+  });
+}
+
+/** Runs a command in the project at `root` and returns the exit code: 0 passed, 1 a gate failed, 2 misuse. */
+export async function main(argv: string[], root = process.cwd()): Promise<number> {
+  const { positionals, values } = parseCommand(argv);
+  const [command] = positionals;
+  if (values.help) {
+    console.log(USAGE);
+    return 0;
+  }
+  if (command === 'check') return check(root, values.only);
+  if (command === 'mutation') {
+    return runMutation(root, await loadConfig(root), values.mutate ?? []);
+  }
+  console.error(`${command ? `unknown command: ${command}` : 'missing command'}\n\n${USAGE}`);
+  return 2;
+}
+
+if (import.meta.main) {
+  main(process.argv.slice(2)).then(
+    (code) => process.exit(code),
+    (error: unknown) => {
+      console.error(`jsq: ${error instanceof Error ? error.message : String(error)}`);
+      process.exit(2);
+    },
+  );
+}

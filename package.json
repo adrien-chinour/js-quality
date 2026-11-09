@@ -1,0 +1,43 @@
+{
+  "name": "js-quality",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Advanced quality gates for JS/TS projects: cognitive complexity, CRAP, duplication, mutation.",
+  "bin": {
+    "jsq": "./dist/cli.mjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "scripts": {
+    "build": "vp pack",
+    "qa": "vp check --deny-warnings && vp test run --coverage && node src/cli.ts check",
+    "mutation": "node src/cli.ts mutation"
+  },
+  "dependencies": {
+    "@stryker-mutator/core": "10.1.1",
+    "@typescript-eslint/parser": "8.72.1",
+    "eslint": "10.14.0",
+    "eslint-plugin-sonarjs": "4.2.2",
+    "jscpd": "5.4.3",
+    "tinyglobby": "0.2.17",
+    "typescript": "6.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "@vitest/coverage-v8": "5.1.0",
+    "vite-plus": "1.5.0"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "12.18.0",
+      "onFail": "download"
+    },
+    "runtime": {
+      "name": "node",
+      "version": "24"
+    }
+  }
+}
