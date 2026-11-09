@@ -24,7 +24,7 @@ vp add -D js-quality @vitest/coverage-v8
 
 ```ts
 test: {
-  coverage: { provider: 'v8', reporter: ['text-summary', 'lcov'], include: ['src/**'] },
+  coverage: { provider: 'v8', reporter: ['text-summary', 'lcov'], include: ['src/**/*.{ts,tsx,js,jsx,mjs,cjs}'] },
 },
 ```
 
