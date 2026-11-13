@@ -77,6 +77,8 @@ export async function runCheck(
   gates: readonly Gate[],
 ): Promise<GateResult[]> {
   const files = await sourceFiles(root, config);
+  // An empty set would pass every gate without checking anything (a monorepo root, a typo in src).
+  if (files.length === 0) throw new Error(`no source file matches src: ${config.src.join(', ')}`);
   const needsComplexity = gates.includes('complexity') || gates.includes('crap');
   const functions = needsComplexity ? await measureFiles(root, files) : [];
   const results: GateResult[] = [];
