@@ -14,17 +14,27 @@ Stryker ou jscpd dans le projet : tout est embarqué.
 
 ## Utilisation
 
-Dans un projet Vite+ :
+Le paquet n'est pas publié sur npm : il s'installe depuis le dépôt git, épinglé sur un commit. Le script `prepare`
+construit `dist/` à l'installation ; pnpm 10 ne l'exécute que si la dépendance exacte figure dans
+`onlyBuiltDependencies` du `pnpm-workspace.yaml` du projet :
+
+```yaml
+onlyBuiltDependencies:
+  - 'js-quality@git+ssh://git@github.com/adrien-chinour/js-quality.git#<sha>'
+```
 
 ```sh
-vp add -D js-quality @vitest/coverage-v8
+vp add -D 'git+ssh://git@github.com/adrien-chinour/js-quality.git#<sha>' @vitest/coverage-v8@<version du Vitest de Vite+>
 ```
+
+Le dépôt est privé : l'installation exige un accès SSH à GitHub, y compris en CI. Changer de version, c'est changer
+le `<sha>` aux deux endroits.
 
 `vite.config.ts` doit produire un rapport lcov :
 
 ```ts
 test: {
-  coverage: { provider: 'v8', reporter: ['text-summary', 'lcov'], include: ['src/**/*.{ts,tsx,js,jsx,mjs,cjs}'] },
+  coverage: { provider: 'v8', reporter: ['text-summary', 'lcov'], include: ['src/**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}'] },
 },
 ```
 

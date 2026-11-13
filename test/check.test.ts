@@ -83,6 +83,12 @@ describe('runCheck', () => {
     expect(results.every((result) => result.passed)).toBe(true);
   });
 
+  it('fails when no source file matches, rather than passing on nothing', async () => {
+    await expect(
+      runCheck(ROOT, mergeConfig({ src: ['packages/*/src/**/*.ts'] }), ['duplication']),
+    ).rejects.toThrow('no source file matches src: packages/*/src/**/*.ts');
+  });
+
   it('needs no coverage report without the CRAP gate', async () => {
     const results = await runCheck(ROOT, mergeConfig({ lcov: 'missing.info' }), ['complexity']);
     expect(results).toHaveLength(1);
