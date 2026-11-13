@@ -11,6 +11,7 @@
   ],
   "type": "module",
   "scripts": {
+    "prepare": "vp pack",
     "build": "vp pack",
     "qa": "vp check --deny-warnings && vp test run --coverage && node src/cli.ts check",
     "mutation": "node src/cli.ts mutation"
