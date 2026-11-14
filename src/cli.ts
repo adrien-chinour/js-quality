@@ -25,9 +25,14 @@ async function check(root: string, only: string | undefined): Promise<number> {
   return results.every((result) => result.passed) ? 0 : 1;
 }
 
+/** `vp run <script> -- <options>` forwards the `--` as is: one right after the command only separates its options. */
+function withoutSeparator(argv: string[]): string[] {
+  return argv[1] === '--' ? [argv[0], ...argv.slice(2)] : argv;
+}
+
 function parseCommand(argv: string[]) {
   return parseArgs({
-    args: argv,
+    args: withoutSeparator(argv),
     allowPositionals: true,
     options: {
       only: { type: 'string' },
@@ -37,20 +42,25 @@ function parseCommand(argv: string[]) {
   });
 }
 
+function misuse(message: string): number {
+  console.error(`${message}\n\n${USAGE}`);
+  return 2;
+}
+
 /** Runs a command in the project at `root` and returns the exit code: 0 passed, 1 a gate failed, 2 misuse. */
 export async function main(argv: string[], root = process.cwd()): Promise<number> {
   const { positionals, values } = parseCommand(argv);
-  const [command] = positionals;
+  const [command, extra] = positionals;
   if (values.help) {
     console.log(USAGE);
     return 0;
   }
+  if (extra !== undefined) return misuse(`unexpected argument: ${extra}`);
   if (command === 'check') return check(root, values.only);
   if (command === 'mutation') {
     return runMutation(root, await loadConfig(root), values.mutate ?? []);
   }
-  console.error(`${command ? `unknown command: ${command}` : 'missing command'}\n\n${USAGE}`);
-  return 2;
+  return misuse(command ? `unknown command: ${command}` : 'missing command');
 }
 
 if (import.meta.main) {
