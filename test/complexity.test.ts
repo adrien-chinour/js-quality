@@ -272,6 +272,18 @@ const wrapped = memo((props) => props);
 const asserted = (() => 2) as () => number;
 `;
     expect(names(source)).toEqual(['parenthesised', 'asserted']);
+    const more = `const satisfying = (() => 3) satisfies () => number;
+const nonNull = (() => 4)!;
+const cast = <() => number>(() => 5);
+`;
+    expect(names(more)).toEqual(['satisfying', 'nonNull', 'cast']);
+  });
+
+  it('names a callback of a call whose callee has no name anonymous', () => {
+    expect(names('factory()(() => 1);\nlist[0](() => 2);\n')).toEqual([
+      '<anonymous>',
+      '<anonymous>#2',
+    ]);
   });
 
   it('numbers homonyms of a file in source order', () => {
