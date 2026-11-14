@@ -76,8 +76,12 @@ Un seuil assoupli se justifie dans le README du projet qui l'assouplit.
 
 ## Notes techniques
 
-- La complexité est calculée par la règle SonarJS exécutée dans ESLint, embarqué : aucune configuration ESLint
-  dans le projet. Le parseur typescript-eslint utilise le TypeScript 6 de `js-quality`, car il refuse TypeScript 7.
+- La complexité est calculée par la règle SonarJS exécutée dans l'Oxlint de `js-quality` (`jsPlugins`), et les
+  bornes de chaque fonction, utilisées par le CRAP, par `oxc-parser` : aucune configuration Oxlint ni ESLint dans le
+  projet, aucune dépendance à TypeScript. Oxlint mesure des copies temporaires des sources où `eslint-disable` et
+  `oxlint-disable` sont rendus inertes (`eslint_disable`, même longueur) : aucun commentaire ne masque une fonction
+  ni ne fait échouer la mesure, et les sources du projet ne sont pas modifiées. Un lancement d'Oxlint coûte environ
+  une seconde, quel que soit le nombre de fichiers.
 - La mutation utilise le runner « command » de Stryker : il lance `mutation.command` dans un bac à sable, sans
   plugin Stryker dans le projet. Stryker n'y ajoute pas `// @ts-nocheck` et ne réécrit pas `tsconfig.json`
   (TypeScript 7 n'a plus d'API JavaScript ; les tests passent par esbuild, qui ignore les types).
