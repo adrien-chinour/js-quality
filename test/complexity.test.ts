@@ -36,10 +36,7 @@ const GET_WORDS = `function getWords(number) {
 }
 `;
 
-// Each measure starts Oxlint and loads the SonarJS plugin: about a second, more on a busy machine.
-const OXLINT = { timeout: 30_000 };
-
-describe('measureSource', OXLINT, () => {
+describe('measureSource', () => {
   it('scores the white paper examples like SonarSource', async () => {
     expect((await measureSource('primes.js', SUM_OF_PRIMES)).map((fn) => fn.complexity)).toEqual([
       7,
@@ -137,7 +134,7 @@ function after(x) {
   });
 });
 
-describe('measureFiles', OXLINT, () => {
+describe('measureFiles', () => {
   async function tempEntries(): Promise<string[]> {
     return (await readdir(tmpdir())).filter((name) => name.startsWith('jsq-'));
   }
