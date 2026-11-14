@@ -66,6 +66,20 @@ describe('measureSource', () => {
     ]);
   });
 
+  it.each(['view.js', 'view.mjs', 'view.cjs'])('parses JSX in %s', async (file) => {
+    const source = 'export const View = ({ on }) => (on ? <b>on</b> : null);\n';
+    expect(await measureSource(file, source)).toMatchObject([
+      { complexity: 1, startLine: 1, endLine: 1 },
+    ]);
+  });
+
+  it('measures files Oxlint would skip by their path, like minified ones', async () => {
+    const source = 'export function f(x) {\n  return x ? 1 : 0;\n}\n';
+    expect(await measureSource('dist/lib.min.js', source)).toMatchObject([
+      { file: 'dist/lib.min.js', line: 1, complexity: 1 },
+    ]);
+  });
+
   it('attributes a nested function to itself, not to its parent', async () => {
     const source = `function outer(list) {
   return list.map((item) => {
@@ -159,6 +173,26 @@ describe('measureFiles', () => {
       expect(await readFile(join(root, 'src/deep/a.ts'), 'utf8')).toBe(source);
     } finally {
       await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it('measures a file outside the root without writing outside its temporary directory', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'complexity-base-'));
+    try {
+      const outside = `jsq-outside-${process.pid}`;
+      await mkdir(join(base, 'project'));
+      await mkdir(join(base, outside));
+      await writeFile(
+        join(base, outside, 'x.ts'),
+        'export function f(x) {\n  return x ? 1 : 0;\n}\n',
+      );
+      const before = await tempEntries();
+      expect(await measureFiles(join(base, 'project'), [`../${outside}/x.ts`])).toMatchObject([
+        { file: `../${outside}/x.ts`, line: 1, complexity: 1, startLine: 1, endLine: 3 },
+      ]);
+      expect(await tempEntries()).toEqual(before);
+    } finally {
+      await rm(base, { recursive: true, force: true });
     }
   });
 

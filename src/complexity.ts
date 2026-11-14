@@ -1,8 +1,8 @@
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, extname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { parseSync } from 'oxc-parser';
 
@@ -88,9 +88,21 @@ function collectFunctions(
   for (const child of children(node).filter(isNode)) collectFunctions(child, line, found);
 }
 
+type Language = 'ts' | 'tsx' | 'jsx';
+
+// Like the former ESLint setup: JSX allowed in every JavaScript file, and every file a module.
+function languageOf(file: string): Language {
+  const extension = extname(file);
+  if (extension === '.tsx') return 'tsx';
+  return ['.ts', '.mts', '.cts'].includes(extension) ? 'ts' : 'jsx';
+}
+
 /** Line ranges of every function of a source; fails on a syntax error. */
 export function functionRanges({ file, source }: SourceFile): LineRange[] {
-  const { program, errors } = parseSync(file, source);
+  const { program, errors } = parseSync(file, source, {
+    lang: languageOf(file),
+    sourceType: 'module',
+  });
   const line = lineAt(source);
   const [error] = errors;
   if (error) throw new Error(`${file}:${line(error.labels[0]?.start ?? 0)}: ${error.message}`);
@@ -123,7 +135,12 @@ interface OxlintDiagnostic {
   labels: { span: { line: number } }[];
 }
 
-async function runOxlint(directory: string): Promise<OxlintDiagnostic[]> {
+interface OxlintReport {
+  diagnostics: OxlintDiagnostic[];
+  number_of_files: number;
+}
+
+async function runOxlint(directory: string): Promise<OxlintReport> {
   const bin = join(dirname(require.resolve('oxlint/package.json')), 'bin', 'oxlint');
   const args = [bin, '-c', '.oxlintrc.json', '-f', 'json', '--disable-nested-config', '.'];
   // Exit code 1 only means some function was reported.
@@ -134,19 +151,38 @@ async function runOxlint(directory: string): Promise<OxlintDiagnostic[]> {
     if (error.code === 1 && error.stdout) return { stdout: error.stdout };
     throw new Error(`oxlint failed: ${error.stderr || error.message}`);
   });
-  return (JSON.parse(stdout) as { diagnostics: OxlintDiagnostic[] }).diagnostics;
+  return JSON.parse(stdout) as OxlintReport;
 }
 
-/** Copies of the sources, directives neutralised, measured by Oxlint in a temporary directory. */
+/**
+ * Name of the copy of the source at `index`: flat, so no `../` leads out of the temporary directory
+ * and no path matches a pattern Oxlint skips (`*.min.js`…); its extension sets the language.
+ */
+function copyName(index: number, file: string): string {
+  return `${index}.${languageOf(file)}`;
+}
+
+/**
+ * Copies of the sources, directives neutralised, measured by Oxlint in a temporary directory;
+ * diagnostics carry the original path back.
+ */
 async function lintCopies(sources: SourceFile[]): Promise<OxlintDiagnostic[]> {
   const directory = await mkdtemp(join(tmpdir(), 'jsq-oxlint-'));
   try {
     await writeFile(join(directory, '.oxlintrc.json'), JSON.stringify(oxlintConfig()));
-    for (const { file, source } of sources) {
-      await mkdir(dirname(join(directory, file)), { recursive: true });
-      await writeFile(join(directory, file), neutraliseDirectives(source));
+    const original = new Map<string, string>();
+    for (const [index, { file, source }] of sources.entries()) {
+      original.set(copyName(index, file), file);
+      await writeFile(join(directory, copyName(index, file)), neutraliseDirectives(source));
     }
-    return await runOxlint(directory);
+    const report = await runOxlint(directory);
+    if (report.number_of_files !== sources.length) {
+      throw new Error(`oxlint linted ${report.number_of_files} of ${sources.length} file(s)`);
+    }
+    return report.diagnostics.map((diagnostic) => ({
+      ...diagnostic,
+      filename: original.get(diagnostic.filename) ?? diagnostic.filename,
+    }));
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -164,6 +200,12 @@ function toComplexity(
   return { file, line, complexity, ...range };
 }
 
+// Code point order, like the sorted list of source files.
+function compareText(a: string, b: string): number {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+}
+
 /** Cognitive complexity of every function whose complexity is above 0, in file then line order. */
 export async function measureSources(sources: SourceFile[]): Promise<FunctionComplexity[]> {
   if (sources.length === 0) return [];
@@ -171,7 +213,7 @@ export async function measureSources(sources: SourceFile[]): Promise<FunctionCom
   const diagnostics = await lintCopies(sources);
   return diagnostics
     .map((diagnostic) => toComplexity(diagnostic, ranges))
-    .sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
+    .sort((a, b) => compareText(a.file, b.file) || a.line - b.line);
 }
 
 /** Cognitive complexity of every function of one source text whose complexity is above 0. */
