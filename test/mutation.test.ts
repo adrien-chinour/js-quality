@@ -31,7 +31,9 @@ describe('strykerConfig', () => {
   });
 
   it('rewrites the sandbox tsconfig files with jsq own script, not TypeScript', () => {
-    const { buildCommand } = strykerConfig(mergeConfig(), []);
+    const { buildCommand, tempDirName } = strykerConfig(mergeConfig(), []);
+    // The script climbs two levels out of `<root>/.stryker-tmp/sandbox-…`.
+    expect(tempDirName).toBe('.stryker-tmp');
     expect(buildCommand).toMatch(/^\S+node\S* \S+\/src\/sandbox-build\.ts$/);
   });
 });
