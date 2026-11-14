@@ -56,6 +56,109 @@ describe('duplicationGate', () => {
   });
 });
 
+describe('complexityGate with a baseline', () => {
+  const functions = [
+    { ...fn('src/a.ts', 20), name: 'frozen', line: 4 },
+    { ...fn('src/a.ts', 18), name: 'worse', line: 9 },
+    { ...fn('src/b.ts', 16), name: 'fresh', line: 2 },
+  ];
+
+  it('passes when every violation is frozen at its value or above, and says so', () => {
+    const result = complexityGate(functions, 15, {
+      'src/a.ts:frozen': 20,
+      'src/a.ts:worse': 19,
+      'src/b.ts:fresh': 16,
+    });
+    expect(result).toMatchObject({ passed: true, details: [], warnings: [] });
+    expect(result.summary).toBe('3 function(s) above cognitive complexity 15, all frozen');
+  });
+
+  it('fails on a new violation or a frozen value exceeded, showing the key and the line', () => {
+    const result = complexityGate(functions, 15, { 'src/a.ts:frozen': 20, 'src/a.ts:worse': 17 });
+    expect(result.passed).toBe(false);
+    expect(result.summary).toBe(
+      '2 function(s) above cognitive complexity 15: split them (1 more frozen)',
+    );
+    expect(result.details).toEqual([
+      'cognitive  18  src/a.ts:9  src/a.ts:worse: 18 > frozen 17',
+      'cognitive  16  src/b.ts:2  src/b.ts:fresh: not frozen',
+    ]);
+  });
+
+  it('warns about frozen entries that no longer fail, without failing', () => {
+    const result = complexityGate([], 15, { 'src/a.ts:gone': 20, 'src/a.ts:renamed': 17 });
+    expect(result.passed).toBe(true);
+    expect(result.warnings).toEqual([
+      '! 2 frozen entry(ies) no longer fail (fixed or renamed): remove them from the baseline',
+      '  src/a.ts:gone',
+      '  src/a.ts:renamed',
+    ]);
+  });
+
+  it('gives the violations to freeze', () => {
+    expect(complexityGate(functions, 15).violations).toEqual({
+      'src/a.ts:frozen': 20,
+      'src/a.ts:worse': 18,
+      'src/b.ts:fresh': 16,
+    });
+  });
+});
+
+describe('crapGate with a baseline', () => {
+  const score = (crap: number) => ({ ...fn('a.ts', 4), coverage: 0, crap });
+
+  it('freezes scores rounded to two decimals and compares them rounded', () => {
+    expect(crapGate([score(12.344)], 10).violations).toEqual({ 'a.ts:f': 12.34 });
+    expect(crapGate([score(12.344)], 10, { 'a.ts:f': 12.34 }).passed).toBe(true);
+    expect(crapGate([score(12.346)], 10, { 'a.ts:f': 12.34 }).details).toEqual([
+      'crap   12.3  cognitive  4  coverage   0%  a.ts:1  a.ts:f: 12.35 > frozen 12.34',
+    ]);
+  });
+});
+
+describe('duplicationGate with a baseline', () => {
+  const clone = (a: string, b: string, start = 1) => ({
+    first: { name: a, start, end: start + 8 },
+    second: { name: b, start, end: start + 8 },
+    lines: 9,
+    tokens: 70,
+  });
+  const report = (...clones: ReturnType<typeof clone>[]) => ({ clones, percentage: 20 });
+
+  it('freezes the number of clones of each pair of files, whatever their lines and order', () => {
+    const frozen = duplicationGate(report(clone('b.ts', 'a.ts', 30), clone('a.ts', 'a.ts')), 0);
+    expect(frozen.violations).toEqual({ 'a.ts <> a.ts': 1, 'a.ts <> b.ts': 1 });
+    const moved = duplicationGate(
+      report(clone('a.ts', 'b.ts', 50), clone('a.ts', 'a.ts', 7)),
+      0,
+      frozen.violations,
+    );
+    expect(moved).toMatchObject({ passed: true, details: [], warnings: [] });
+    expect(moved.summary).toBe('2 clone pair(s) of files above 0%, all frozen');
+  });
+
+  it('fails on a new clone, even in a file holding a frozen one', () => {
+    const frozen = { 'a.ts <> b.ts': 1 };
+    const result = duplicationGate(report(clone('a.ts', 'b.ts'), clone('a.ts', 'c.ts')), 0, frozen);
+    expect(result.passed).toBe(false);
+    expect(result.details).toEqual(['  9 lines  a.ts:1-9  = c.ts:1-9  a.ts <> c.ts: not frozen']);
+    const twice = duplicationGate(
+      report(clone('a.ts', 'b.ts'), clone('b.ts', 'a.ts', 20)),
+      0,
+      frozen,
+    );
+    expect(twice.passed).toBe(false);
+    expect(twice.details).toEqual([
+      '  9 lines  a.ts:1-9  = b.ts:1-9  a.ts <> b.ts: 2 > frozen 1',
+      '  9 lines  b.ts:20-28  = a.ts:20-28',
+    ]);
+  });
+
+  it('has nothing to freeze under the threshold', () => {
+    expect(duplicationGate(report(clone('a.ts', 'b.ts')), 50).violations).toEqual({});
+  });
+});
+
 describe('runCheck', () => {
   const config = mergeConfig({ lcov: 'lcov.info' });
 
@@ -90,6 +193,16 @@ describe('runCheck', () => {
     ).rejects.toThrow('no source file matches src: packages/*/src/**/*.ts');
   });
 
+  it('passes every gate once its violations are frozen', async () => {
+    const gates = ['complexity', 'crap', 'duplication'] as const;
+    const first = await runCheck(ROOT, config, gates);
+    const baseline = Object.fromEntries(first.map((result) => [result.gate, result.violations]));
+    expect(baseline.crap).toEqual({ 'src/complex.ts:classify': 156 });
+    expect(baseline.duplication).toEqual({ 'src/dup-a.ts <> src/dup-b.ts': 1 });
+    const results = await runCheck(ROOT, config, gates, baseline);
+    expect(results.every((result) => result.passed)).toBe(true);
+  });
+
   it('needs no coverage report without the CRAP gate', async () => {
     const results = await runCheck(ROOT, mergeConfig({ lcov: 'missing.info' }), ['complexity']);
     expect(results).toHaveLength(1);
@@ -97,11 +210,25 @@ describe('runCheck', () => {
 });
 
 describe('formatResults', () => {
-  it('prints one line per gate and indents the details', () => {
+  it('prints one line per gate and indents the details, then the warnings', () => {
     const output = formatResults([
-      { gate: 'crap', passed: false, summary: 'bad', details: ['x'] },
-      { gate: 'duplication', passed: true, summary: 'good', details: [] },
+      {
+        gate: 'crap',
+        passed: false,
+        summary: 'bad',
+        details: ['x'],
+        warnings: ['! w'],
+        violations: {},
+      },
+      {
+        gate: 'duplication',
+        passed: true,
+        summary: 'good',
+        details: [],
+        warnings: [],
+        violations: {},
+      },
     ]);
-    expect(output).toBe('✗ crap        bad\n    x\n✓ duplication good');
+    expect(output).toBe('✗ crap        bad\n    x\n    ! w\n✓ duplication good');
   });
 });
