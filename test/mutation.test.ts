@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vite-plus/test';
 import { mergeConfig } from '../src/config.ts';
-import { mutateGlobs, strykerConfig } from '../src/mutation.ts';
+import { commandLine, mutateGlobs, strykerConfig } from '../src/mutation.ts';
 
 describe('mutateGlobs', () => {
   it('mutates the sources minus the ignored files by default', () => {
@@ -28,5 +28,18 @@ describe('strykerConfig', () => {
       disableTypeChecks: false,
       tsconfigFile: '.jsq-no-tsconfig.json',
     });
+  });
+
+  it('rewrites the sandbox tsconfig files with jsq own script, not TypeScript', () => {
+    const { buildCommand } = strykerConfig(mergeConfig(), []);
+    expect(buildCommand).toMatch(/^\S+node\S* \S+\/src\/sandbox-build\.ts$/);
+  });
+});
+
+describe('commandLine', () => {
+  it('escapes the spaces Stryker would split on', () => {
+    expect(commandLine('/opt/my node/node', '/a b/build.ts')).toBe(
+      '/opt/my\\ node/node /a\\ b/build.ts',
+    );
   });
 });

@@ -2,10 +2,20 @@ import { spawnSync } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { delimiter, dirname, join } from 'node:path';
+import { delimiter, dirname, extname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Config } from './config.ts';
 
 const require = createRequire(import.meta.url);
+
+/** Script that prepares Stryker's sandbox: next to this module, `.ts` in the sources, `.mjs` once built. */
+const SANDBOX_BUILD = fileURLToPath(
+  new URL(`sandbox-build${extname(import.meta.url)}`, import.meta.url),
+);
+
+/** A command line as Stryker splits it: on spaces, unless escaped. */
+export const commandLine = (...words: string[]) =>
+  words.map((word) => word.replaceAll(' ', '\\ ')).join(' ');
 
 /** Files Stryker mutates: the given ones, else the gates' sources minus their ignores. */
 export function mutateGlobs(config: Config, only: string[]): string[] {
@@ -29,8 +39,10 @@ export function strykerConfig(config: Config, only: string[]): Record<string, un
     // Tests run through esbuild, which strips types: no `// @ts-nocheck` that would shift line numbers.
     disableTypeChecks: false,
     // Stryker rewrites tsconfig.json with the project's TypeScript API, which TypeScript 7 no longer
-    // ships. Tests run through esbuild and need no rewrite: point it at a file that does not exist.
+    // ships: point it at a file that does not exist, and rewrite the paths that leave the sandbox
+    // (`"extends": "../../tsconfig.base.json"` in a monorepo package) with jsq's own script.
     tsconfigFile: '.jsq-no-tsconfig.json',
+    buildCommand: commandLine(process.execPath, SANDBOX_BUILD),
     cleanTempDir: true,
   };
 }
