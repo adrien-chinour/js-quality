@@ -14,7 +14,12 @@ export interface LineRange {
   endLine: number;
 }
 
-export interface FunctionComplexity extends LineRange {
+/** A function of a source: its line range and a name unique in its file, which holds no line number. */
+export interface NamedRange extends LineRange {
+  name: string;
+}
+
+export interface FunctionComplexity extends NamedRange {
   file: string;
   /** Line SonarJS reports the function at (its name or its first token). */
   line: number;
@@ -77,15 +82,97 @@ function lineAt(source: string): (offset: number) => number {
   return (offset) => starts.findLastIndex((start) => start <= offset) + 1;
 }
 
+// Expressions that leave a function as it is: `(() => 1)`, `(() => 1) as F`.
+const WRAPPERS = new Set([
+  'ParenthesizedExpression',
+  'TSAsExpression',
+  'TSSatisfiesExpression',
+  'TSNonNullExpression',
+  'TSTypeAssertion',
+]);
+
+/** The nearest ancestor of a node that is no wrapper, and its child on the way to the node. */
+interface Owner {
+  node: AstNode;
+  child: AstNode;
+}
+
+interface Found extends NamedRange {
+  start: number;
+}
+
+function keyName(key: unknown, computed: unknown): string | undefined {
+  const node = key as AstNode & { name?: string; value?: unknown };
+  if (computed === true || !isNode(node)) return undefined;
+  if (node.type === 'Identifier' || node.type === 'PrivateIdentifier') return node.name;
+  return node.type === 'Literal' ? String(node.value) : undefined;
+}
+
+/** `a` for `a`, `c` for `a.b.c`. */
+function lastName(node: AstNode): string | undefined {
+  if (node.type === 'MemberExpression') return keyName(node.property, node.computed);
+  return keyName(node, false);
+}
+
+/** Name a function owes to where it stands: variable, property, method, or callback of a call. */
+function nameFromOwner({ node, child }: Owner): string | undefined {
+  switch (node.type) {
+    case 'VariableDeclarator':
+      return keyName(node.id, false);
+    case 'AssignmentExpression':
+      return lastName(node.left as AstNode);
+    case 'Property':
+    case 'MethodDefinition':
+    case 'PropertyDefinition':
+      return keyName(node.key, node.computed);
+    case 'ExportDefaultDeclaration':
+      return 'default';
+    case 'CallExpression':
+    case 'NewExpression': {
+      const callee = (node.arguments as unknown[]).includes(child)
+        ? lastName(node.callee as AstNode)
+        : undefined;
+      return callee === undefined ? undefined : `${callee}(callback)`;
+    }
+    default:
+      return undefined;
+  }
+}
+
+function functionName(node: AstNode, owner: Owner | undefined): string {
+  return keyName(node.id, false) ?? (owner && nameFromOwner(owner)) ?? '<anonymous>';
+}
+
 function collectFunctions(
   node: AstNode,
+  owner: Owner | undefined,
   line: (offset: number) => number,
-  found: LineRange[],
+  found: Found[],
 ): void {
   if (FUNCTION_TYPES.has(node.type as string)) {
-    found.push({ startLine: line(node.start as number), endLine: line(node.end as number) });
+    found.push({
+      name: functionName(node, owner),
+      start: node.start as number,
+      startLine: line(node.start as number),
+      endLine: line(node.end as number),
+    });
   }
-  for (const child of children(node).filter(isNode)) collectFunctions(child, line, found);
+  const wrapper = WRAPPERS.has(node.type as string);
+  for (const child of children(node).filter(isNode)) {
+    collectFunctions(child, wrapper ? owner : { node, child }, line, found);
+  }
+}
+
+/** Homonyms of a file numbered in source order: `name`, `name#2`… */
+function numberHomonyms(found: Found[]): NamedRange[] {
+  const seen = new Map<string, number>();
+  return found
+    .sort((a, b) => a.start - b.start)
+    .map(({ name, startLine, endLine }) => {
+      const rank = (seen.get(name) ?? 0) + 1;
+      seen.set(name, rank);
+      return { name: rank > 1 ? `${name}#${rank}` : name, startLine, endLine };
+    });
 }
 
 type Language = 'ts' | 'tsx' | 'jsx';
@@ -97,8 +184,8 @@ function languageOf(file: string): Language {
   return ['.ts', '.mts', '.cts'].includes(extension) ? 'ts' : 'jsx';
 }
 
-/** Line ranges of every function of a source; fails on a syntax error. */
-export function functionRanges({ file, source }: SourceFile): LineRange[] {
+/** Name and line range of every function of a source; fails on a syntax error. */
+export function functionRanges({ file, source }: SourceFile): NamedRange[] {
   const { program, errors } = parseSync(file, source, {
     lang: languageOf(file),
     sourceType: 'module',
@@ -106,13 +193,16 @@ export function functionRanges({ file, source }: SourceFile): LineRange[] {
   const line = lineAt(source);
   const [error] = errors;
   if (error) throw new Error(`${file}:${line(error.labels[0]?.start ?? 0)}: ${error.message}`);
-  const ranges: LineRange[] = [];
-  collectFunctions(program as unknown as AstNode, line, ranges);
-  return ranges;
+  const found: Found[] = [];
+  collectFunctions(program as unknown as AstNode, undefined, line, found);
+  return numberHomonyms(found);
 }
 
 /** The innermost range holding a line. */
-export function enclosingRange(ranges: LineRange[], line: number): LineRange | undefined {
+export function enclosingRange<Range extends LineRange>(
+  ranges: Range[],
+  line: number,
+): Range | undefined {
   const holding = ranges.filter((range) => range.startLine <= line && line <= range.endLine);
   return holding.sort((a, b) => a.endLine - a.startLine - (b.endLine - b.startLine))[0];
 }
@@ -193,13 +283,17 @@ async function lintCopies(sources: SourceFile[]): Promise<OxlintDiagnostic[]> {
 
 function toComplexity(
   diagnostic: OxlintDiagnostic,
-  ranges: Map<string, LineRange[]>,
+  ranges: Map<string, NamedRange[]>,
 ): FunctionComplexity {
   const file = diagnostic.filename;
   const line = diagnostic.labels[0]?.span.line ?? 0;
   const complexity = complexityFromMessage(diagnostic.message);
   if (complexity === undefined) throw new Error(`${file}:${line}: ${diagnostic.message}`);
-  const range = enclosingRange(ranges.get(file) ?? [], line) ?? { startLine: line, endLine: line };
+  const range = enclosingRange(ranges.get(file) ?? [], line) ?? {
+    name: '<anonymous>',
+    startLine: line,
+    endLine: line,
+  };
   return { file, line, complexity, ...range };
 }
 

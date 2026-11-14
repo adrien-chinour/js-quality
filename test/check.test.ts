@@ -11,6 +11,7 @@ import { mergeConfig } from '../src/config.ts';
 const ROOT = 'test/fixtures/project';
 const fn = (file: string, complexity: number) => ({
   file,
+  name: 'f',
   line: 1,
   startLine: 1,
   endLine: 3,

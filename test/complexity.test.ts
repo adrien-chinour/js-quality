@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vite-plus/test';
 import {
   complexityFromMessage,
   enclosingRange,
+  functionRanges,
   measureFiles,
   measureSource,
   neutraliseDirectives,
@@ -45,8 +46,9 @@ describe('measureSource', () => {
     expect((await measureSource('words.js', GET_WORDS)).map((fn) => fn.complexity)).toEqual([1]);
   });
 
-  it('gives the line range of the function', async () => {
+  it('gives the name and line range of the function', async () => {
     expect((await measureSource('primes.js', SUM_OF_PRIMES))[0]).toMatchObject({
+      name: 'sumOfPrimes',
       startLine: 1,
       endLine: 12,
     });
@@ -209,6 +211,78 @@ describe('neutraliseDirectives', () => {
       '/* oxlint_disable */\n// eslint_disable-next-line no-console\nconst a = 1;\n',
     );
     expect(neutralised).toHaveLength(source.length);
+  });
+});
+
+describe('functionRanges', () => {
+  const names = (source: string, file = 'a.ts') =>
+    functionRanges({ file, source }).map((range) => range.name);
+
+  it('names a function by its identifier, or by the variable, property or method holding it', () => {
+    const source = `export function declared() {}
+export default function () {}
+const assigned = () => 1;
+const expression = function inner() {};
+let typed: () => number = (): number => 1;
+module.exports.exported = () => 2;
+const object = { property: () => 3, method() {}, 'quoted': function () {}, [computed]: () => 4 };
+class Service {
+  constructor() {}
+  get value() { return 1; }
+  field = () => 5;
+  #secret() {}
+}
+`;
+    expect(names(source)).toEqual([
+      'declared',
+      'default',
+      'assigned',
+      'inner',
+      'typed',
+      'exported',
+      'property',
+      'method',
+      'quoted',
+      '<anonymous>',
+      'constructor',
+      'value',
+      'field',
+      'secret',
+    ]);
+  });
+
+  it('names a function passed as an argument after its callee', () => {
+    const source = `items.forEach((item) => item);
+transaction(async () => {});
+new Promise((resolve) => resolve(1));
+const wrapped = memo((props) => props);
+(() => {})();
+`;
+    expect(names(source)).toEqual([
+      'forEach(callback)',
+      'transaction(callback)',
+      'Promise(callback)',
+      'memo(callback)',
+      '<anonymous>',
+    ]);
+  });
+
+  it('looks through parentheses and type assertions', () => {
+    const source = `const parenthesised = (() => 1);
+const asserted = (() => 2) as () => number;
+`;
+    expect(names(source)).toEqual(['parenthesised', 'asserted']);
+  });
+
+  it('numbers homonyms of a file in source order', () => {
+    const source = 'list.map(() => 1);\nfunction f() {}\nlist.map(() => 2);\nlist.map(() => 3);\n';
+    expect(names(source)).toEqual(['map(callback)', 'f', 'map(callback)#2', 'map(callback)#3']);
+  });
+
+  it('keeps the name of a function when lines are added above it', () => {
+    const source = 'function f() {}\nlist.map(() => 1);\n';
+    const shifted = `// a comment\n\nconst x = 1;\n${source}`;
+    expect(names(shifted)).toEqual(names(source));
   });
 });
 
