@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vite-plus/test';
 import { mergeConfig } from '../src/config.ts';
 import { commandLine, mutateGlobs, strykerConfig } from '../src/mutation.ts';
@@ -34,7 +35,8 @@ describe('strykerConfig', () => {
     const { buildCommand, tempDirName } = strykerConfig(mergeConfig(), []);
     // The script climbs two levels out of `<root>/.stryker-tmp/sandbox-…`.
     expect(tempDirName).toBe('.stryker-tmp');
-    expect(buildCommand).toMatch(/^\S+node\S* \S+\/src\/sandbox-build\.ts$/);
+    const script = fileURLToPath(new URL('../src/sandbox-build.ts', import.meta.url));
+    expect(buildCommand).toBe(commandLine(process.execPath, script));
   });
 });
 
