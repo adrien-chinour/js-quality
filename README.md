@@ -122,9 +122,24 @@ Monorepo : chaque lancement de `jsq` a sa référence, dans le dossier où il to
   ni ne fait échouer la mesure, et les sources du projet ne sont pas modifiées. Un lancement d'Oxlint coûte environ
   une seconde, quel que soit le nombre de fichiers.
 - La mutation utilise le runner « command » de Stryker : il lance `mutation.command` dans un bac à sable, sans
-  plugin Stryker dans le projet. Stryker n'y ajoute pas `// @ts-nocheck` et ne réécrit pas `tsconfig.json`
-  (TypeScript 7 n'a plus d'API JavaScript ; les tests passent par esbuild, qui ignore les types).
+  plugin Stryker dans le projet. Stryker n'y ajoute pas `// @ts-nocheck` et ne réécrit pas lui-même les
+  `tsconfig.json`, car il le ferait avec l'API JavaScript de TypeScript, que TypeScript 7 n'a plus. `jsq` les
+  réécrit par son propre script (commande de build de Stryker) : les chemins `extends`, `references`, `include`,
+  `exclude` et `files` qui sortent du bac à sable (`.stryker-tmp/sandbox-…`, deux niveaux plus bas) gagnent deux
+  `../`.
 - Ajouter `coverage/` et `.stryker-tmp/` au `.gitignore` du projet.
+
+### Monorepo
+
+`jsq mutation` se lance dans chaque paquet (`vp run --filter <paquet> mutation`) : Stryker copie le paquet seul,
+et un `tsconfig.json` qui étend un fichier de la racine (`"extends": "../../tsconfig.base.json"`) est réécrit pour
+le retrouver. Les `node_modules` du paquet et de ses parents restent résolus par Node depuis le bac à sable.
+
+Le runner « command » relance toute la suite du paquet pour chaque mutant, sans l'analyse de couverture par test
+du runner Vitest. Sur un gros paquet, l'écart est important : sur `apps/api` de software-atlas (suite unitaire
+de 15 s), `src/ssm.ts` (26 mutants) prend 34 s avec le runner Vitest et 6 min 53 s avec `jsq mutation`, machine
+chargée. Sous charge, des mutants dépassent le délai de Stryker et comptent comme tués (21 sur 26 dans cette
+mesure) : le score est alors surestimé. Sur un tel paquet, limiter `--mutate` aux fichiers modifiés.
 
 ## Développement
 
