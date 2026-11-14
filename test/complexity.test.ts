@@ -7,6 +7,7 @@ import {
   enclosingRange,
   measureFiles,
   measureSource,
+  neutraliseDirectives,
 } from '../src/complexity.ts';
 
 // Examples of the SonarSource white paper "Cognitive Complexity" (G. Ann Campbell).
@@ -163,6 +164,17 @@ describe('measureFiles', () => {
 
   it('measures nothing when there is no file', async () => {
     expect(await measureFiles('.', [])).toEqual([]);
+  });
+});
+
+describe('neutraliseDirectives', () => {
+  it('breaks ESLint and Oxlint directives without moving any character', () => {
+    const source = '/* oxlint-disable */\n// eslint-disable-next-line no-console\nconst a = 1;\n';
+    const neutralised = neutraliseDirectives(source);
+    expect(neutralised).toBe(
+      '/* oxlint_disable */\n// eslint_disable-next-line no-console\nconst a = 1;\n',
+    );
+    expect(neutralised).toHaveLength(source.length);
   });
 });
 
