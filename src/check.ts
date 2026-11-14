@@ -177,15 +177,17 @@ export function duplicationGate(
   frozen?: Section,
 ): GateResult {
   const duplicated = `${report.percentage.toFixed(2)}% duplicated`;
+  const above = exceeds(report, threshold);
   return judge(
     {
       gate: 'duplication',
-      violations: exceeds(report, threshold) ? clonePairs(report.clones) : [],
+      violations: above ? clonePairs(report.clones) : [],
       clean: `${report.clones.length} clone(s), ${duplicated} (limit ${threshold}%)`,
       failed: () => `${duplicated}, above ${threshold}%: extract the shared code`,
       what: `clone pair(s) of files above ${threshold}%`,
     },
-    frozen,
+    // Under the threshold the clones still exist: their frozen pairs are not stale.
+    above ? frozen : undefined,
   );
 }
 

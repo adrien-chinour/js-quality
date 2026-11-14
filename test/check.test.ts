@@ -154,6 +154,11 @@ describe('duplicationGate with a baseline', () => {
     ]);
   });
 
+  it('keeps frozen pairs without warning while the rate stays under the threshold', () => {
+    const result = duplicationGate(report(clone('a.ts', 'b.ts')), 50, { 'a.ts <> b.ts': 1 });
+    expect(result).toMatchObject({ passed: true, warnings: [] });
+  });
+
   it('has nothing to freeze under the threshold', () => {
     expect(duplicationGate(report(clone('a.ts', 'b.ts')), 50).violations).toEqual({});
   });

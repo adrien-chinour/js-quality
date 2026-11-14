@@ -6,16 +6,21 @@ import { GATES, type Gate } from './gates.ts';
 export type Section = Record<string, number>;
 export type Baseline = Partial<Record<Gate, Section>>;
 
+function isObject(data: unknown): data is object {
+  return typeof data === 'object' && data !== null && !Array.isArray(data);
+}
+
+function validateSection(gate: string, section: unknown): void {
+  if (!(GATES as readonly string[]).includes(gate)) throw new Error(`unknown gate ${gate}`);
+  if (!isObject(section)) throw new Error(`${gate} is not an object`);
+  for (const [key, value] of Object.entries(section)) {
+    if (typeof value !== 'number') throw new Error(`${gate}.${key} is not a number`);
+  }
+}
+
 function validate(data: unknown): Baseline {
-  if (typeof data !== 'object' || data === null || Array.isArray(data)) {
-    throw new Error('not an object');
-  }
-  for (const [gate, section] of Object.entries(data)) {
-    if (!(GATES as readonly string[]).includes(gate)) throw new Error(`unknown gate ${gate}`);
-    for (const [key, value] of Object.entries(section as object)) {
-      if (typeof value !== 'number') throw new Error(`${gate}.${key} is not a number`);
-    }
-  }
+  if (!isObject(data)) throw new Error('not an object');
+  for (const [gate, section] of Object.entries(data)) validateSection(gate, section);
   return data as Baseline;
 }
 

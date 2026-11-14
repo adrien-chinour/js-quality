@@ -58,6 +58,14 @@ describe('readBaseline and writeBaseline', () => {
     await expect(readBaseline(path)).rejects.toThrow(`invalid baseline ${path}: not an object`);
   });
 
+  it.each(['5', '[12]', 'null'])('rejects a section %s, which is no object', async (section) => {
+    const path = join(dir, 'section.json');
+    await writeFile(path, `{ "crap": ${section} }`);
+    await expect(readBaseline(path)).rejects.toThrow(
+      `invalid baseline ${path}: crap is not an object`,
+    );
+  });
+
   it('fails on a baseline it cannot read, other than a missing one', async () => {
     await expect(readBaseline(dir)).rejects.toThrow('EISDIR');
   });
