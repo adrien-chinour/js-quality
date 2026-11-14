@@ -179,10 +179,13 @@ async function lintCopies(sources: SourceFile[]): Promise<OxlintDiagnostic[]> {
     if (report.number_of_files !== sources.length) {
       throw new Error(`oxlint linted ${report.number_of_files} of ${sources.length} file(s)`);
     }
-    return report.diagnostics.map((diagnostic) => ({
-      ...diagnostic,
-      filename: original.get(diagnostic.filename) ?? diagnostic.filename,
-    }));
+    return report.diagnostics.map((diagnostic) => {
+      const filename = original.get(diagnostic.filename);
+      if (filename === undefined) {
+        throw new Error(`oxlint reported an unknown file: ${diagnostic.filename}`);
+      }
+      return { ...diagnostic, filename };
+    });
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
