@@ -25,22 +25,37 @@ export function mutateGlobs(config: Config, only: string[]): string[] {
 }
 
 /**
- * Stryker configuration. The command runner runs the project's own tests, whatever runs them,
- * so the project needs no Stryker plugin of its own.
+ * How Stryker runs the tests. By default, the Vitest runner jsq embeds, loaded by absolute path so the project
+ * needs no Stryker plugin, with per-test coverage: each mutant runs only the tests that cover it. With
+ * `mutation.command`, the command runner runs that command for every mutant, whatever runs the tests.
  */
-export function strykerConfig(config: Config, only: string[]): Record<string, unknown> {
+function testRunner(command: string | undefined): Record<string, unknown> {
+  if (command) {
+    return { testRunner: 'command', commandRunner: { command }, coverageAnalysis: 'off' };
+  }
   return {
-    testRunner: 'command',
-    commandRunner: { command: config.mutation.command },
+    testRunner: 'vitest',
+    plugins: [require.resolve('@stryker-mutator/vitest-runner')],
+    coverageAnalysis: 'perTest',
+  };
+}
+
+/** Stryker configuration. */
+export function strykerConfig(config: Config, only: string[]): Record<string, unknown> {
+  const { command, break: breaking } = config.mutation;
+  return {
+    ...testRunner(command),
     mutate: mutateGlobs(config, only),
     reporters: ['clear-text', 'progress'],
-    thresholds: { high: 90, low: config.mutation.break, break: config.mutation.break },
+    // Stryker refuses a high threshold under the low one.
+    thresholds: { high: Math.max(90, breaking), low: breaking, break: breaking },
     tempDirName: '.stryker-tmp',
     // Tests run through esbuild, which strips types: no `// @ts-nocheck` that would shift line numbers.
     disableTypeChecks: false,
     // Stryker rewrites tsconfig.json with the project's TypeScript API, which TypeScript 7 no longer
     // ships: point it at a file that does not exist, and rewrite the paths that leave the sandbox
-    // (`"extends": "../../tsconfig.base.json"` in a monorepo package) with jsq's own script.
+    // (`"extends": "../../tsconfig.base.json"` in a monorepo package) with jsq's own script. Vitest
+    // reads them too: without the rewrite, it fails to load such a tsconfig in the sandbox.
     tsconfigFile: '.jsq-no-tsconfig.json',
     buildCommand: commandLine(process.execPath, SANDBOX_BUILD),
     cleanTempDir: true,
@@ -58,7 +73,7 @@ export async function runMutation(root: string, config: Config, only: string[]):
       'bin',
       'stryker.js',
     );
-    // The project's binaries (vp, vitest…) must be found by the test command.
+    // The project's binaries (vp, vitest…) must be found by mutation.command.
     const path = [join(root, 'node_modules', '.bin'), process.env.PATH].join(delimiter);
     const result = spawnSync(process.execPath, [stryker, 'run', configFile], {
       cwd: root,

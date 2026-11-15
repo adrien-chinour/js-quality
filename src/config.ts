@@ -15,7 +15,8 @@ export interface Config {
   /** Path of the baseline of frozen violations, relative to the project root. */
   baseline: string;
   duplication: { minTokens: number; minLines: number; threshold: number };
-  mutation: { command: string; break: number; mutate: string[] };
+  /** `command` runs the tests through Stryker's command runner instead of its Vitest runner. */
+  mutation: { command?: string; break: number; mutate: string[] };
 }
 
 export const defaults: Config = {
@@ -26,7 +27,7 @@ export const defaults: Config = {
   lcov: 'coverage/lcov.info',
   baseline: 'jsq-baseline.json',
   duplication: { minTokens: 40, minLines: 4, threshold: 0 },
-  mutation: { command: 'vp test run', break: 70, mutate: [] },
+  mutation: { break: 70, mutate: [] },
 };
 
 type Overrides = Partial<Omit<Config, 'duplication' | 'mutation'>> & {

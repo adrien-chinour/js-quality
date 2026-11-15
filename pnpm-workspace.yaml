@@ -1,0 +1,11 @@
+# Same resolution as a `vp create` project: Vite is Vite+'s core, so the Vitest of Stryker's runner
+# and the one behind `vite-plus/test` are one and the same instance.
+catalog:
+  vite: npm:@voidzero-dev/vite-plus-core@1.5.0
+overrides:
+  vite@*: 'catalog:'
+peerDependencyRules:
+  allowAny:
+    - vite
+  allowedVersions:
+    vite: '*'
