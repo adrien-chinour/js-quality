@@ -57,8 +57,8 @@ describe('scoreFunctions', () => {
     const lcov = parseLcov(LCOV, '/repo');
     const scores = scoreFunctions(
       [
-        { file: 'src/a.ts', line: 1, startLine: 1, endLine: 3, complexity: 2 },
-        { file: 'src/b.ts', line: 1, startLine: 1, endLine: 1, complexity: 3 },
+        { file: 'src/a.ts', name: 'a', line: 1, startLine: 1, endLine: 3, complexity: 2 },
+        { file: 'src/b.ts', name: 'b', line: 1, startLine: 1, endLine: 1, complexity: 3 },
       ],
       lcov,
     );

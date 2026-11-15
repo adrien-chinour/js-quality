@@ -12,6 +12,8 @@ export interface Config {
   crap: number;
   /** Path of the LCOV report the CRAP gate reads. */
   lcov: string;
+  /** Path of the baseline of frozen violations, relative to the project root. */
+  baseline: string;
   duplication: { minTokens: number; minLines: number; threshold: number };
   mutation: { command: string; break: number; mutate: string[] };
 }
@@ -22,6 +24,7 @@ export const defaults: Config = {
   complexity: 15,
   crap: 10,
   lcov: 'coverage/lcov.info',
+  baseline: 'jsq-baseline.json',
   duplication: { minTokens: 40, minLines: 4, threshold: 0 },
   mutation: { command: 'vp test run', break: 70, mutate: [] },
 };

@@ -47,12 +47,13 @@ Scripts du `package.json` :
 
 Puis `vp run qa` à chaque changement, `vp run mutation` à la recette d'une version.
 
-| Commande                            | Rôle                                                         |
-| ----------------------------------- | ------------------------------------------------------------ |
-| `jsq check`                         | Complexité, CRAP et duplication ; code 1 si une porte échoue |
-| `jsq check --only crap,duplication` | Une partie des portes seulement                              |
-| `jsq mutation`                      | Mutation sur les sources ; code non nul sous le seuil        |
-| `jsq mutation --mutate src/a.ts`    | Mutation sur quelques fichiers (option répétable)            |
+| Commande                            | Rôle                                                          |
+| ----------------------------------- | ------------------------------------------------------------- |
+| `jsq check`                         | Complexité, CRAP et duplication ; code 1 si une porte échoue  |
+| `jsq check --only crap,duplication` | Une partie des portes seulement                               |
+| `jsq check --write-baseline`        | Gèle les violations courantes (voir « Adoption progressive ») |
+| `jsq mutation`                      | Mutation sur les sources ; code non nul sous le seuil         |
+| `jsq mutation --mutate src/a.ts`    | Mutation sur quelques fichiers (option répétable)             |
 
 Codes de sortie : 0 tout passe, 1 une porte échoue, 2 mauvaise utilisation ou erreur.
 
@@ -67,12 +68,50 @@ Facultative, bloc `jsq` du `package.json`. Valeurs par défaut :
   "complexity": 15,
   "crap": 10,
   "lcov": "coverage/lcov.info",
+  "baseline": "jsq-baseline.json",
   "duplication": { "minTokens": 40, "minLines": 4, "threshold": 0 },
   "mutation": { "command": "vp test run", "break": 70, "mutate": [] }
 }
 ```
 
 Un seuil assoupli se justifie dans le README du projet qui l'assouplit.
+
+## Adoption progressive
+
+Sur un projet existant, les portes échouent dès le premier lancement. Plutôt que d'assouplir les seuils, on gèle les
+violations existantes, puis on les résorbe :
+
+1. `jsq check --write-baseline` écrit `jsq-baseline.json` (option `baseline` du bloc `jsq`, chemin relatif au
+   dossier où `jsq` tourne) : chaque violation courante et sa valeur, portes et clés triées. Le fichier se versionne.
+2. `jsq check` passe tant que chaque violation est gelée avec une valeur supérieure ou égale. Il échoue sur une
+   violation absente du fichier ou aggravée, en affichant la ligne, la clé et la valeur gelée.
+3. Une entrée gelée qui ne viole plus la porte (fonction corrigée, renommée ou supprimée, clone retiré) est signalée
+   par un avertissement, avec le nombre d'entrées et leurs clés ; la porte reste verte. On la retire du fichier, à
+   la main ou en relançant `--write-baseline`, dans la même PR que la correction.
+
+| Porte       | Clé                                  | Valeur gelée                             |
+| ----------- | ------------------------------------ | ---------------------------------------- |
+| complexity  | `src/a.ts:nom`                       | complexité cognitive                     |
+| crap        | `src/a.ts:nom`                       | score CRAP arrondi à 2 décimales         |
+| duplication | `src/a.ts <> src/b.ts` (paire triée) | nombre de clones entre ces deux fichiers |
+
+Une clé ne contient aucun numéro de ligne : ajouter du code au-dessus d'une fonction ou d'un clone ne le dégèle pas.
+Le nom d'une fonction est son identifiant, sinon la variable, la propriété ou la méthode qui la reçoit,
+`<appelant>(callback)` pour une fonction passée en argument (`map(callback)`), `default` pour un export par défaut
+anonyme, `<anonymous>` sinon. Les homonymes d'un fichier sont numérotés dans l'ordre du fichier : `name`, `name#2`…
+Un nouveau clone fait échouer la porte même entre deux fichiers déjà gelés, puisqu'il augmente leur nombre de
+clones. La porte duplication ne gèle des clones que si le taux dépasse `duplication.threshold`.
+
+`--write-baseline` réécrit les sections des portes lancées et garde les autres : avec `--only crap`, seule la section
+`crap` change. Il rend toujours 0 ; relire le diff du fichier avant de le versionner, car il gèle aussi une
+violation aggravée.
+
+Monorepo : chaque lancement de `jsq` a sa référence, dans le dossier où il tourne.
+
+- À la racine, `jsq check --only complexity,duplication` lit et écrit `./jsq-baseline.json` (sections `complexity`
+  et `duplication`, clés relatives à la racine : `apps/api/src/a.ts:nom`).
+- Dans chaque paquet, `jsq check --only crap` lit et écrit `<paquet>/jsq-baseline.json` (section `crap`, clés
+  relatives au paquet : `src/a.ts:nom`), à côté de son `coverage/lcov.info`.
 
 ## Notes techniques
 

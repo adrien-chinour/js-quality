@@ -25,3 +25,9 @@ describe('loadConfig', () => {
     expect(await loadConfig(join(tmpdir(), 'jsq-missing'))).toEqual(defaults);
   });
 });
+
+describe('defaults', () => {
+  it('reads the baseline from jsq-baseline.json at the project root', () => {
+    expect(defaults.baseline).toBe('jsq-baseline.json');
+  });
+});

@@ -14,7 +14,18 @@ export interface LineRange {
   endLine: number;
 }
 
-export interface FunctionComplexity extends LineRange {
+/** A function of a source: its line range and a name unique in its file, which holds no line number. */
+export interface NamedRange extends LineRange {
+  name: string;
+}
+
+/** A function and the UTF-16 offsets SonarJS may report it at: from its key for a method, else its own span. */
+export interface LocatedRange extends NamedRange {
+  from: number;
+  to: number;
+}
+
+export interface FunctionComplexity extends NamedRange {
   file: string;
   /** Line SonarJS reports the function at (its name or its first token). */
   line: number;
@@ -77,15 +88,105 @@ function lineAt(source: string): (offset: number) => number {
   return (offset) => starts.findLastIndex((start) => start <= offset) + 1;
 }
 
+// Expressions that leave a function as it is: `(() => 1)`, `(() => 1) as F`.
+const WRAPPERS = new Set([
+  'ParenthesizedExpression',
+  'TSAsExpression',
+  'TSSatisfiesExpression',
+  'TSNonNullExpression',
+  'TSTypeAssertion',
+]);
+
+/** The nearest ancestor of a node that is no wrapper, and its child on the way to the node. */
+interface Owner {
+  node: AstNode;
+  child: AstNode;
+}
+
+interface Found extends LocatedRange {
+  start: number;
+}
+
+// Owners SonarJS reports a function by: the key of a method (`run() {}`, `get value() {}`) lies before the function.
+const KEYED_OWNERS = new Set(['MethodDefinition', 'Property', 'PropertyDefinition']);
+
+function keyName(key: unknown, computed: unknown): string | undefined {
+  const node = key as AstNode & { name?: string; value?: unknown };
+  if (computed === true || !isNode(node)) return undefined;
+  if (node.type === 'Identifier' || node.type === 'PrivateIdentifier') return node.name;
+  return node.type === 'Literal' ? String(node.value) : undefined;
+}
+
+/** `a` for `a`, `c` for `a.b.c`. */
+function lastName(node: AstNode): string | undefined {
+  if (node.type === 'MemberExpression') return keyName(node.property, node.computed);
+  return keyName(node, false);
+}
+
+/** Name a function owes to where it stands: variable, property, method, or callback of a call. */
+function nameFromOwner({ node, child }: Owner): string | undefined {
+  switch (node.type) {
+    case 'VariableDeclarator':
+      return keyName(node.id, false);
+    case 'AssignmentExpression':
+      return lastName(node.left as AstNode);
+    case 'Property':
+    case 'MethodDefinition':
+    case 'PropertyDefinition':
+      return keyName(node.key, node.computed);
+    case 'ExportDefaultDeclaration':
+      return 'default';
+    case 'CallExpression':
+    case 'NewExpression': {
+      const callee = (node.arguments as unknown[]).includes(child)
+        ? lastName(node.callee as AstNode)
+        : undefined;
+      return callee === undefined ? undefined : `${callee}(callback)`;
+    }
+    default:
+      return undefined;
+  }
+}
+
+function functionName(node: AstNode, owner: Owner | undefined): string {
+  return keyName(node.id, false) ?? (owner && nameFromOwner(owner)) ?? '<anonymous>';
+}
+
 function collectFunctions(
   node: AstNode,
+  owner: Owner | undefined,
   line: (offset: number) => number,
-  found: LineRange[],
+  found: Found[],
 ): void {
   if (FUNCTION_TYPES.has(node.type as string)) {
-    found.push({ startLine: line(node.start as number), endLine: line(node.end as number) });
+    found.push({
+      name: functionName(node, owner),
+      start: node.start as number,
+      from:
+        owner && KEYED_OWNERS.has(owner.node.type as string)
+          ? (owner.node.start as number)
+          : (node.start as number),
+      to: node.end as number,
+      startLine: line(node.start as number),
+      endLine: line(node.end as number),
+    });
   }
-  for (const child of children(node).filter(isNode)) collectFunctions(child, line, found);
+  const wrapper = WRAPPERS.has(node.type as string);
+  for (const child of children(node).filter(isNode)) {
+    collectFunctions(child, wrapper ? owner : { node, child }, line, found);
+  }
+}
+
+/** Homonyms of a file numbered in source order: `name`, `name#2`… */
+function numberHomonyms(found: Found[]): LocatedRange[] {
+  const seen = new Map<string, number>();
+  return found
+    .sort((a, b) => a.start - b.start)
+    .map(({ name, from, to, startLine, endLine }) => {
+      const rank = (seen.get(name) ?? 0) + 1;
+      seen.set(name, rank);
+      return { name: rank > 1 ? `${name}#${rank}` : name, from, to, startLine, endLine };
+    });
 }
 
 type Language = 'ts' | 'tsx' | 'jsx';
@@ -97,8 +198,8 @@ function languageOf(file: string): Language {
   return ['.ts', '.mts', '.cts'].includes(extension) ? 'ts' : 'jsx';
 }
 
-/** Line ranges of every function of a source; fails on a syntax error. */
-export function functionRanges({ file, source }: SourceFile): LineRange[] {
+/** Name, offsets and line range of every function of a source; fails on a syntax error. */
+export function functionRanges({ file, source }: SourceFile): LocatedRange[] {
   const { program, errors } = parseSync(file, source, {
     lang: languageOf(file),
     sourceType: 'module',
@@ -106,15 +207,26 @@ export function functionRanges({ file, source }: SourceFile): LineRange[] {
   const line = lineAt(source);
   const [error] = errors;
   if (error) throw new Error(`${file}:${line(error.labels[0]?.start ?? 0)}: ${error.message}`);
-  const ranges: LineRange[] = [];
-  collectFunctions(program as unknown as AstNode, line, ranges);
-  return ranges;
+  const found: Found[] = [];
+  collectFunctions(program as unknown as AstNode, undefined, line, found);
+  return numberHomonyms(found);
 }
 
-/** The innermost range holding a line. */
-export function enclosingRange(ranges: LineRange[], line: number): LineRange | undefined {
-  const holding = ranges.filter((range) => range.startLine <= line && line <= range.endLine);
-  return holding.sort((a, b) => a.endLine - a.startLine - (b.endLine - b.startLine))[0];
+/**
+ * The innermost function holding an offset. A line is not enough: a function and its callback often start on
+ * the same one (`const f = (xs) => xs.map((x) => …)`).
+ */
+export function enclosingFunction<Range extends LocatedRange>(
+  ranges: Range[],
+  offset: number,
+): Range | undefined {
+  const holding = ranges.filter((range) => range.from <= offset && offset < range.to);
+  return holding.sort((a, b) => a.to - a.from - (b.to - b.from))[0];
+}
+
+/** UTF-16 offset, which oxc-parser reports, of a UTF-8 byte offset, which Oxlint reports. */
+export function utf16Offset(bytes: Buffer, byteOffset: number): number {
+  return bytes.subarray(0, byteOffset).toString('utf8').length;
 }
 
 export function complexityFromMessage(message: string): number | undefined {
@@ -132,7 +244,8 @@ export function neutraliseDirectives(source: string): string {
 interface OxlintDiagnostic {
   message: string;
   filename: string;
-  labels: { span: { line: number } }[];
+  /** `offset` counts UTF-8 bytes of the copy, which has the length of the source. */
+  labels: { span: { line: number; offset: number } }[];
 }
 
 interface OxlintReport {
@@ -191,16 +304,38 @@ async function lintCopies(sources: SourceFile[]): Promise<OxlintDiagnostic[]> {
   }
 }
 
+interface Parsed {
+  /** UTF-8 bytes of the source; undefined when the source is ASCII and offsets need no conversion. */
+  bytes: Buffer | undefined;
+  ranges: LocatedRange[];
+}
+
 function toComplexity(
   diagnostic: OxlintDiagnostic,
-  ranges: Map<string, LineRange[]>,
+  parsed: Map<string, Parsed>,
 ): FunctionComplexity {
   const file = diagnostic.filename;
-  const line = diagnostic.labels[0]?.span.line ?? 0;
+  const span = diagnostic.labels[0]?.span;
+  const line = span?.line ?? 0;
   const complexity = complexityFromMessage(diagnostic.message);
-  if (complexity === undefined) throw new Error(`${file}:${line}: ${diagnostic.message}`);
-  const range = enclosingRange(ranges.get(file) ?? [], line) ?? { startLine: line, endLine: line };
-  return { file, line, complexity, ...range };
+  if (complexity === undefined || span === undefined) {
+    throw new Error(`${file}:${line}: ${diagnostic.message}`);
+  }
+  const { bytes, ranges } = parsed.get(file) as Parsed;
+  const range = enclosingFunction(
+    ranges,
+    bytes === undefined ? span.offset : utf16Offset(bytes, span.offset),
+  );
+  if (range === undefined)
+    return { file, line, complexity, name: '<anonymous>', startLine: line, endLine: line };
+  return {
+    file,
+    line,
+    complexity,
+    name: range.name,
+    startLine: range.startLine,
+    endLine: range.endLine,
+  };
 }
 
 // Code point order, like the sorted list of source files.
@@ -212,10 +347,22 @@ function compareText(a: string, b: string): number {
 /** Cognitive complexity of every function whose complexity is above 0, in file then line order. */
 export async function measureSources(sources: SourceFile[]): Promise<FunctionComplexity[]> {
   if (sources.length === 0) return [];
-  const ranges = new Map(sources.map((source) => [source.file, functionRanges(source)]));
+  const parsed = new Map(
+    sources.map((source) => [
+      source.file,
+      {
+        // One byte per character: Oxlint's offsets are already UTF-16 ones.
+        bytes:
+          Buffer.byteLength(source.source) === source.source.length
+            ? undefined
+            : Buffer.from(source.source, 'utf8'),
+        ranges: functionRanges(source),
+      },
+    ]),
+  );
   const diagnostics = await lintCopies(sources);
   return diagnostics
-    .map((diagnostic) => toComplexity(diagnostic, ranges))
+    .map((diagnostic) => toComplexity(diagnostic, parsed))
     .sort((a, b) => compareText(a.file, b.file) || a.line - b.line);
 }
 

@@ -14,7 +14,7 @@ vi.mock('node:child_process', () => ({
 const SOURCE = 'export function f(x) {\n  return x ? 1 : 0;\n}\n';
 const DIAGNOSTIC = {
   message: 'Refactor this function to reduce its Cognitive Complexity from 1 to the 0 allowed.',
-  labels: [{ span: { line: 1 } }],
+  labels: [{ span: { line: 1, offset: 16 } }],
 };
 
 describe('measureSource against the Oxlint report', () => {
