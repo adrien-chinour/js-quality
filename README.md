@@ -23,10 +23,10 @@ vp add -D @adrien-chinour/js-quality @vitest/coverage-v8@<version du Vitest de V
 
 `vitest` se déclare à la version exacte dont dépend `vite-plus` (ligne `vitest` de `vp --version`) : le runner
 Vitest de Stryker, embarqué dans `jsq`, importe `vitest` depuis son propre emplacement, et la déclaration garantit
-qu'il charge celui de Vite+. C'est une dépendance pair facultative de `js-quality`, inutile avec `mutation.command`.
-Les tests continuent d'importer `vite-plus/test`. Le projet garde l'override de `vite` que pose `vp create`
-(`vite@*` vers `@voidzero-dev/vite-plus-core`) : sans lui, `vitest` peut exister en deux copies, et le runner échoue
-sur « Vitest failed to find the current suite ».
+qu'il charge celui de Vite+. C'est une dépendance peer facultative de `js-quality`, inutile avec
+`mutation.command`. Les tests continuent d'importer `vite-plus/test`. Le projet garde l'override de `vite` que pose
+`vp create` (`vite@*` vers `@voidzero-dev/vite-plus-core`) : sans lui, `vitest` peut exister en deux copies, et le
+runner échoue sur « Vitest failed to find the current suite ».
 
 Aucun script d'installation : `dist/` est construit avant publication, pnpm n'a rien à approuver.
 

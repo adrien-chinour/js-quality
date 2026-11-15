@@ -17,5 +17,8 @@ describe('runMutation', () => {
   it('runs the configured command instead when mutation.command is set', async () => {
     const config = mergeConfig({ mutation: { command: 'vp test run' } });
     expect(await runMutation(PACKAGE, config, [])).toBe(0);
+    // A failing command fails the initial test run: the command is the one Stryker runs.
+    const failing = mergeConfig({ mutation: { command: 'exit 1' } });
+    expect(await runMutation(PACKAGE, failing, [])).not.toBe(0);
   }, 120_000);
 });
