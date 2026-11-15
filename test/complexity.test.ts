@@ -4,11 +4,12 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vite-plus/test';
 import {
   complexityFromMessage,
-  enclosingRange,
+  enclosingFunction,
   functionRanges,
   measureFiles,
   measureSource,
   neutraliseDirectives,
+  utf16Offset,
 } from '../src/complexity.ts';
 
 // Examples of the SonarSource white paper "Cognitive Complexity" (G. Ann Campbell).
@@ -92,6 +93,37 @@ describe('measureSource', () => {
 `;
     expect(await measureSource('nested.js', source)).toMatchObject([
       { complexity: 1, startLine: 2, endLine: 5 },
+    ]);
+  });
+
+  it('tells apart a function and its callback that start on the same line', async () => {
+    const source = `const s = 'é😀'; export const outer = (xs: number[]) => xs.map((x) => {
+  if (x > 1) { if (x > 2) { return 1; } } return 0; })
+  .length > 2 ? 1 : 0;
+`;
+    const measured = await measureSource('same-line.ts', source);
+    expect(measured.map(({ name, startLine, endLine }) => ({ name, startLine, endLine }))).toEqual(
+      expect.arrayContaining([
+        { name: 'outer', startLine: 1, endLine: 3 },
+        { name: 'map(callback)', startLine: 1, endLine: 2 },
+      ]),
+    );
+    expect(measured).toHaveLength(2);
+  });
+
+  it('attributes a method to itself when SonarJS reports it at its name', async () => {
+    const source = `const handler = { run(x) { if (x) return 1; return 0; } };
+class Service {
+  get value() { return this.a ? 1 : 0; }
+  async load(x) { if (x) { return x; } return null; }
+  static make(x) { return x ? new Service() : null; }
+}
+`;
+    expect((await measureSource('methods.js', source)).map((fn) => fn.name)).toEqual([
+      'run',
+      'value',
+      'load',
+      'make',
     ]);
   });
 
@@ -298,14 +330,23 @@ const cast = <() => number>(() => 5);
   });
 });
 
-describe('enclosingRange', () => {
-  it('returns the innermost range', () => {
-    const ranges = [
-      { startLine: 1, endLine: 10 },
-      { startLine: 3, endLine: 5 },
-    ];
-    expect(enclosingRange(ranges, 4)).toEqual({ startLine: 3, endLine: 5 });
-    expect(enclosingRange(ranges, 11)).toBeUndefined();
+describe('enclosingFunction', () => {
+  it('returns the innermost function holding an offset, its end excluded', () => {
+    const outer = { name: 'outer', from: 0, to: 100, startLine: 1, endLine: 10 };
+    const inner = { name: 'inner', from: 20, to: 40, startLine: 1, endLine: 5 };
+    expect(enclosingFunction([outer, inner], 30)).toBe(inner);
+    expect(enclosingFunction([outer, inner], 40)).toBe(outer);
+    expect(enclosingFunction([outer, inner], 0)).toBe(outer);
+    expect(enclosingFunction([outer, inner], 100)).toBeUndefined();
+  });
+});
+
+describe('utf16Offset', () => {
+  it('converts a UTF-8 byte offset to a UTF-16 one', () => {
+    const source = "'é😀' + x";
+    const bytes = Buffer.from(source, 'utf8');
+    expect(utf16Offset(bytes, Buffer.byteLength("'é😀' + "))).toBe(source.indexOf('x'));
+    expect(utf16Offset(bytes, 0)).toBe(0);
   });
 });
 
