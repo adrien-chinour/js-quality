@@ -11,6 +11,9 @@ export default defineConfig({
   },
   test: {
     include: ['test/**/*.test.ts'],
+    // Every complexity measure starts Oxlint and loads the SonarJS plugin: about a second, far more
+    // on a busy machine or under Stryker's parallel runs.
+    testTimeout: 30_000,
     exclude: ['test/fixtures/**', 'node_modules/**'],
     coverage: {
       provider: 'v8',
