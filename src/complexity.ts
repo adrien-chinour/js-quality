@@ -305,7 +305,8 @@ async function lintCopies(sources: SourceFile[]): Promise<OxlintDiagnostic[]> {
 }
 
 interface Parsed {
-  bytes: Buffer;
+  /** UTF-8 bytes of the source; undefined when the source is ASCII and offsets need no conversion. */
+  bytes: Buffer | undefined;
   ranges: LocatedRange[];
 }
 
@@ -321,7 +322,10 @@ function toComplexity(
     throw new Error(`${file}:${line}: ${diagnostic.message}`);
   }
   const { bytes, ranges } = parsed.get(file) as Parsed;
-  const range = enclosingFunction(ranges, utf16Offset(bytes, span.offset));
+  const range = enclosingFunction(
+    ranges,
+    bytes === undefined ? span.offset : utf16Offset(bytes, span.offset),
+  );
   if (range === undefined)
     return { file, line, complexity, name: '<anonymous>', startLine: line, endLine: line };
   return {
@@ -346,7 +350,14 @@ export async function measureSources(sources: SourceFile[]): Promise<FunctionCom
   const parsed = new Map(
     sources.map((source) => [
       source.file,
-      { bytes: Buffer.from(source.source, 'utf8'), ranges: functionRanges(source) },
+      {
+        // One byte per character: Oxlint's offsets are already UTF-16 ones.
+        bytes:
+          Buffer.byteLength(source.source) === source.source.length
+            ? undefined
+            : Buffer.from(source.source, 'utf8'),
+        ranges: functionRanges(source),
+      },
     ]),
   );
   const diagnostics = await lintCopies(sources);
