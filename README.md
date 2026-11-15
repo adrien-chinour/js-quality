@@ -14,21 +14,14 @@ Stryker ou jscpd dans le projet : tout est embarqué.
 
 ## Utilisation
 
-Le paquet n'est pas publié sur npm : il s'installe depuis le dépôt git, épinglé sur un commit. Le script `prepare`
-construit `dist/` à l'installation ; pnpm 10 ne l'exécute que si la dépendance exacte figure dans
-`onlyBuiltDependencies` du `pnpm-workspace.yaml` du projet :
-
-```yaml
-onlyBuiltDependencies:
-  - 'js-quality@git+ssh://git@github.com/adrien-chinour/js-quality.git#<sha>'
-```
+Paquet npm [`@adrien-chinour/js-quality`](https://www.npmjs.com/package/@adrien-chinour/js-quality), en dépendance de
+dev avec la couverture v8 de Vitest :
 
 ```sh
-vp add -D 'git+ssh://git@github.com/adrien-chinour/js-quality.git#<sha>' @vitest/coverage-v8@<version du Vitest de Vite+>
+vp add -D @adrien-chinour/js-quality @vitest/coverage-v8@<version du Vitest de Vite+>
 ```
 
-Le dépôt est privé : l'installation exige un accès SSH à GitHub, y compris en CI. Changer de version, c'est changer
-le `<sha>` aux deux endroits.
+Aucun script d'installation : `dist/` est construit avant publication, pnpm n'a rien à approuver.
 
 `vite.config.ts` doit produire un rapport lcov :
 
@@ -149,3 +142,21 @@ vp run qa          # js-quality s'applique ses propres portes
 vp run mutation    # ou : vp run mutation -- --mutate src/crap.ts
 vp pack            # construit dist/cli.mjs
 ```
+
+## Publication
+
+Versionnage sémantique ; tant que la version est en 0.x, une version mineure peut casser la configuration ou la
+sortie. Publier une version :
+
+1. Une PR monte `version` dans `package.json`, puis est fusionnée.
+2. Sur `main` à jour : `git tag v<version> && git push origin v<version>`.
+3. Le workflow `release.yml` vérifie que le tag égale la version, lance `vp run qa`, construit l'archive et la publie
+   sur npm par trusted publishing (OIDC, sans jeton), avec attestation de provenance.
+
+Mise en place, une seule fois : la première version est publiée à la main (`vp pm login`, puis `vp pm publish
+--no-git-checks` depuis `main`), puis sur npmjs.com, _Settings_ du paquet, _Trusted Publisher_ : GitHub Actions,
+dépôt `adrien-chinour/js-quality`, workflow `release.yml`.
+
+## Licence
+
+[0BSD](LICENSE) : usage, copie, modification et distribution libres, sans condition.
