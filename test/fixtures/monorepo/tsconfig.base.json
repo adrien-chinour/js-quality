@@ -1,0 +1,10 @@
+{
+  // Settings shared by every package.
+  "compilerOptions": {
+    "strict": true,
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+  },
+}

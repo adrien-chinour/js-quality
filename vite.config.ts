@@ -22,7 +22,7 @@ export default defineConfig({
     },
   },
   pack: {
-    entry: ['src/cli.ts'],
+    entry: ['src/cli.ts', 'src/sandbox-build.ts'],
     format: ['esm'],
     platform: 'node',
     dts: false,

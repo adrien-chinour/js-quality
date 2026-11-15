@@ -39,5 +39,10 @@
       "name": "node",
       "version": "24"
     }
+  },
+  "jsq": {
+    "mutation": {
+      "command": "vp test run --exclude test/mutation.integration.test.ts"
+    }
   }
 }
