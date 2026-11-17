@@ -1,20 +1,27 @@
 {
-  "name": "js-quality",
-  "version": "0.1.0",
-  "private": true,
+  "name": "@adrien-chinour/js-quality",
+  "version": "0.2.0",
   "description": "Advanced quality gates for JS/TS projects: cognitive complexity, CRAP, duplication, mutation.",
+  "license": "0BSD",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adrien-chinour/js-quality.git"
+  },
   "bin": {
-    "jsq": "./dist/cli.mjs"
+    "jsq": "dist/cli.mjs"
   },
   "files": [
     "dist"
   ],
   "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "prepare": "vp pack",
     "build": "vp pack",
     "qa": "vp check --deny-warnings && vp test run --coverage && node src/cli.ts check",
-    "mutation": "node src/cli.ts mutation"
+    "mutation": "node src/cli.ts mutation",
+    "prepack": "vp pack"
   },
   "dependencies": {
     "@stryker-mutator/core": "10.1.1",
