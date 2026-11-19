@@ -1,6 +1,6 @@
 {
   "name": "@adrien-chinour/js-quality",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Advanced quality gates for JS/TS projects: cognitive complexity, CRAP, duplication, mutation.",
   "license": "0BSD",
   "repository": {

@@ -166,8 +166,9 @@ sortie. Publier une version :
 3. Le workflow `release.yml` vérifie que le tag égale la version, lance `vp run qa`, construit l'archive et la publie
    sur npm par trusted publishing (OIDC, sans jeton), avec attestation de provenance.
 
-Mise en place, une seule fois : la première version se publie à la main, puis sur npmjs.com, _Settings_ du paquet,
-_Trusted Publisher_ : GitHub Actions, dépôt `adrien-chinour/js-quality`, workflow `release.yml`. La publication à
+Mise en place, une seule fois : la première version se publie à la main, puis le paquet déclare le workflow comme
+éditeur de confiance, hors du projet : `npm trust github @adrien-chinour/js-quality --repo adrien-chinour/js-quality
+--file release.yml`, ou sur npmjs.com, _Settings_ du paquet, _Trusted Publisher_. La publication à
 la main passe par npm, pas par `vp pm publish` : le jeton de `vp pm login` est rangé dans
 `~/.config/pnpm/auth.ini`, que npm ne lit pas, et npm refuse d'agir dans le projet (`devEngines` impose pnpm). Le
 compte npm exige la double authentification : passkey, ou jeton granulaire avec _bypass 2FA_, à révoquer ensuite.
