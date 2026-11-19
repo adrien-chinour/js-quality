@@ -7,7 +7,7 @@ Portes qualité JS/TS que [Vite+](https://viteplus.dev) ne fournit pas, réunies
 | Complexité cognitive | Complexité de chaque fonction, règle `sonarjs/cognitive-complexity` (définition SonarSource)           | 15 au plus       |
 | CRAP                 | `complexité² × (1 − couverture)³ + complexité`, par fonction, couverture lue dans `coverage/lcov.info` | moins de 10      |
 | Duplication          | Blocs copiés-collés (jscpd), 40 tokens et 4 lignes au moins                                            | 0 %              |
-| Mutation             | Score Stryker, les tests du projet lancés par sa propre commande                                       | 70 % au moins    |
+| Mutation             | Score Stryker, tests du projet lancés par Vitest, seuls ceux qui couvrent chaque mutant                | 70 % au moins    |
 
 Format, lint, types et tests restent à Vite+ (`vp check`, `vp test`). `jsq` n'a besoin d'aucune configuration ESLint,
 Stryker ou jscpd dans le projet : tout est embarqué.
@@ -18,8 +18,15 @@ Paquet npm [`@adrien-chinour/js-quality`](https://www.npmjs.com/package/@adrien-
 dev avec la couverture v8 de Vitest :
 
 ```sh
-vp add -D @adrien-chinour/js-quality @vitest/coverage-v8@<version du Vitest de Vite+>
+vp add -D @adrien-chinour/js-quality @vitest/coverage-v8@<version du Vitest de Vite+> vitest@<version du Vitest de Vite+>
 ```
+
+`vitest` se déclare à la version exacte dont dépend `vite-plus` (ligne `vitest` de `vp --version`) : le runner
+Vitest de Stryker, embarqué dans `jsq`, importe `vitest` depuis son propre emplacement, et la déclaration garantit
+qu'il charge celui de Vite+. C'est une dépendance peer facultative de `js-quality`, inutile avec
+`mutation.command`. Les tests continuent d'importer `vite-plus/test`. Le projet garde l'override de `vite` que pose
+`vp create` (`vite@*` vers `@voidzero-dev/vite-plus-core`) : sans lui, `vitest` peut exister en deux copies, et le
+runner échoue sur « Vitest failed to find the current suite ».
 
 Aucun script d'installation : `dist/` est construit avant publication, pnpm n'a rien à approuver.
 
@@ -63,9 +70,12 @@ Facultative, bloc `jsq` du `package.json`. Valeurs par défaut :
   "lcov": "coverage/lcov.info",
   "baseline": "jsq-baseline.json",
   "duplication": { "minTokens": 40, "minLines": 4, "threshold": 0 },
-  "mutation": { "command": "vp test run", "break": 70, "mutate": [] }
+  "mutation": { "break": 70, "mutate": [] }
 }
 ```
+
+`mutation.command` (absent par défaut), pour un projet dont les tests ne passent pas par Vitest : Stryker lance
+alors cette commande pour chaque mutant (runner « command »), sans analyse de couverture par test.
 
 Un seuil assoupli se justifie dans le README du projet qui l'assouplit.
 
@@ -114,12 +124,16 @@ Monorepo : chaque lancement de `jsq` a sa référence, dans le dossier où il to
   `oxlint-disable` sont rendus inertes (`eslint_disable`, même longueur) : aucun commentaire ne masque une fonction
   ni ne fait échouer la mesure, et les sources du projet ne sont pas modifiées. Un lancement d'Oxlint coûte environ
   une seconde, quel que soit le nombre de fichiers.
-- La mutation utilise le runner « command » de Stryker : il lance `mutation.command` dans un bac à sable, sans
-  plugin Stryker dans le projet. Stryker n'y ajoute pas `// @ts-nocheck` et ne réécrit pas lui-même les
-  `tsconfig.json`, car il le ferait avec l'API JavaScript de TypeScript, que TypeScript 7 n'a plus. `jsq` les
-  réécrit par son propre script (commande de build de Stryker) : les chemins `extends`, `references`, `include`,
-  `exclude` et `files` qui sortent du bac à sable (`.stryker-tmp/sandbox-…`, deux niveaux plus bas) gagnent deux
-  `../`.
+- La mutation utilise le runner Vitest de Stryker (`@stryker-mutator/vitest-runner`), embarqué dans `jsq` et chargé
+  par chemin absolu, avec analyse de couverture par test (`coverageAnalysis: "perTest"`) : chaque mutant ne relance
+  que les tests qui le couvrent. Aucune configuration ni dépendance Stryker dans le projet. Stryker lit la
+  configuration Vitest du projet (`vite.config.ts`) et pose `STRYKER_MUTATOR_WORKER` dans ses processus.
+- `thresholds.high` vaut 90, ou `mutation.break` s'il est plus haut.
+- Stryker n'ajoute pas `// @ts-nocheck` et ne réécrit pas lui-même les `tsconfig.json`, car il le ferait avec l'API
+  JavaScript de TypeScript, que TypeScript 7 n'a plus. `jsq` les réécrit par son propre script (commande de build de
+  Stryker) : les chemins `extends`, `references`, `include`, `exclude` et `files` qui sortent du bac à sable
+  (`.stryker-tmp/sandbox-…`, deux niveaux plus bas) gagnent deux `../`. Vitest lit ces fichiers : sans la
+  réécriture, il échoue dans le bac à sable sur un `tsconfig.json` qui étend un fichier hors du paquet.
 - Ajouter `coverage/` et `.stryker-tmp/` au `.gitignore` du projet.
 
 ### Monorepo
@@ -128,11 +142,10 @@ Monorepo : chaque lancement de `jsq` a sa référence, dans le dossier où il to
 et un `tsconfig.json` qui étend un fichier de la racine (`"extends": "../../tsconfig.base.json"`) est réécrit pour
 le retrouver. Les `node_modules` du paquet et de ses parents restent résolus par Node depuis le bac à sable.
 
-Le runner « command » relance toute la suite du paquet pour chaque mutant, sans l'analyse de couverture par test
-du runner Vitest. Sur un gros paquet, l'écart est important : sur `apps/api` de software-atlas (suite unitaire
-de 15 s), `src/ssm.ts` (26 mutants) prend 34 s avec le runner Vitest et 6 min 53 s avec `jsq mutation`, machine
-chargée. Sous charge, des mutants dépassent le délai de Stryker et comptent comme tués (21 sur 26 dans cette
-mesure) : le score est alors surestimé. Sur un tel paquet, limiter `--mutate` aux fichiers modifiés.
+Le runner « command » (`mutation.command`) relance toute la suite du paquet pour chaque mutant. Sur `apps/api` de
+software-atlas, `src/ssm.ts` (26 mutants) prend 6 s avec le runner Vitest (score 73 %, aucune expiration) et 1 min
+27 s avec `"command": "vp test run"`, où les 26 mutants expirent et comptent comme tués (score 100 %, faux).
+Sous charge, le runner « command » surestime donc le score.
 
 ## Développement
 
@@ -153,9 +166,15 @@ sortie. Publier une version :
 3. Le workflow `release.yml` vérifie que le tag égale la version, lance `vp run qa`, construit l'archive et la publie
    sur npm par trusted publishing (OIDC, sans jeton), avec attestation de provenance.
 
-Mise en place, une seule fois : la première version est publiée à la main (`vp pm login`, puis `vp pm publish
---no-git-checks` depuis `main`), puis sur npmjs.com, _Settings_ du paquet, _Trusted Publisher_ : GitHub Actions,
-dépôt `adrien-chinour/js-quality`, workflow `release.yml`.
+Mise en place, une seule fois : la première version se publie à la main, puis sur npmjs.com, _Settings_ du paquet,
+_Trusted Publisher_ : GitHub Actions, dépôt `adrien-chinour/js-quality`, workflow `release.yml`. La publication à
+la main passe par npm, pas par `vp pm publish` : le jeton de `vp pm login` est rangé dans
+`~/.config/pnpm/auth.ini`, que npm ne lit pas, et npm refuse d'agir dans le projet (`devEngines` impose pnpm). Le
+compte npm exige la double authentification : passkey, ou jeton granulaire avec _bypass 2FA_, à révoquer ensuite.
+
+1. Sur `main` à jour : `vp install`.
+2. Construire l'archive hors du projet : `vp pm pack --pack-destination <dossier>`.
+3. Depuis ce dossier : `npm publish ./<archive>.tgz --access public`.
 
 ## Licence
 

@@ -9,7 +9,7 @@ import { runMutation } from './mutation.ts';
 const USAGE = `Usage:
   jsq check [--only complexity,crap,duplication]   cognitive complexity, CRAP and duplication gates
   jsq check --write-baseline [--only …]            freeze the current violations of the gates
-  jsq mutation [--mutate <glob>]...                 mutation testing with Stryker
+  jsq mutation [--mutate <glob>]...                 mutation testing with Stryker and Vitest
 
 Settings: optional "jsq" block of package.json (src, ignore, complexity, crap, lcov, baseline,
 duplication.{minTokens,minLines,threshold}, mutation.{command,break,mutate}).`;
