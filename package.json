@@ -28,14 +28,14 @@
     "@stryker-mutator/vitest-runner": "10.1.1",
     "eslint-plugin-sonarjs": "4.2.2",
     "jscpd": "5.4.3",
-    "oxc-parser": "0.158.0",
-    "oxlint": "1.91.0",
+    "oxc-parser": "0.159.0",
+    "oxlint": "1.94.0",
     "tinyglobby": "0.2.17"
   },
   "devDependencies": {
-    "@types/node": "24.19.2",
+    "@types/node": "26.6.6",
     "@vitest/coverage-v8": "5.1.0",
-    "vite-plus": "1.5.0",
+    "vite-plus": "1.6.0",
     "vitest": "5.1.0"
   },
   "peerDependencies": {
